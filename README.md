@@ -8,10 +8,12 @@ Requires Python 3.10 or newer. No installation or third-party packages are neede
 
 ```sh
 python rename_dates.py "/path/to/first folder" "/path/to/second folder"
-python rename_dates.py "/path/to/first folder" "/path/to/second folder" --apply
+python rename_dates.py --apply "/full/path/to/the/generated-proposals.csv"
 ```
 
-Use `python3` instead of `python` if that is how Python is installed on your computer. The tool searches subfolders recursively. Quote paths that contain spaces.
+Use `python3` instead of `python` if that is how Python is installed on your computer. The first command searches subfolders recursively and writes a `rename-proposals-*.csv` file in your current working directory. Use its actual filename in the second command. Quote paths that contain spaces.
+
+Open the proposals CSV in a spreadsheet or text editor. Leave `old_path` alone and edit only `proposed_name`. Change a proposed filename to use your own name; clear its cell or delete its entire row to leave that file untouched. Save it as UTF-8 CSV, then run `--apply` with its path. The tool renames eligible date files within their original folders; a proposed name cannot contain a directory path. Use only CSV files you created and reviewed yourself.
 
 | Before | After |
 |---|---|
@@ -24,10 +26,10 @@ Dates use day, month, year order. Underscores between the parts are optional: `D
 
 ## Safety
 
-- The default command only prints proposed changes. Read this preview before using `--apply`, especially for six-digit numbers that might be something other than dates.
+- The default command prints proposed changes and writes an editable CSV. Review it before using `--apply`, especially for six-digit numbers that might be something other than dates.
 - Invalid dates, files with more than one date-like number, and names already containing a valid `YYYYMMDD` date are skipped.
 - Dot-prefixed files and directories and symbolic links are skipped. File contents are never edited.
-- If a proposed filename already exists or two files would get the same name, the run stops before renaming anything.
+- Before applying the CSV, the tool checks that sources still exist and proposed names are valid. If a proposed filename already exists or two files would get the same name, the run stops before renaming anything. Resolve the conflict in the CSV and retry.
 - An apply run writes `rename-log-*.csv` in your current working directory. It records completed old and new paths so you can reverse them manually. If a filesystem error interrupts a run, earlier renames remain in place and in the log.
 - The log is **not a content backup**. Back up irreplaceable files first. Do not run the tool while another process is changing filenames in the same folders.
 

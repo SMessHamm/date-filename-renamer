@@ -39,15 +39,17 @@ class RenameDatesTests(unittest.TestCase):
             source = nested / "Report_31_12_24.txt"
             source.write_text("original", encoding="utf-8")
             (root / ".hidden_31_12_24.txt").write_text("hidden", encoding="utf-8")
-            with contextlib.redirect_stdout(StringIO()):
-                self.assertEqual(rename_dates.main([str(root), str(nested)]), 0)
-            self.assertTrue(source.exists())
-
             before = Path.cwd()
             try:
                 os.chdir(root)
                 with contextlib.redirect_stdout(StringIO()):
-                    self.assertEqual(rename_dates.main([str(root), str(nested), "--apply"]), 0)
+                    self.assertEqual(rename_dates.main([str(root), str(nested)]), 0)
+                self.assertTrue(source.exists())
+                proposals = next(root.glob("rename-proposals-*.csv"))
+                with proposals.open(newline="", encoding="utf-8") as file:
+                    self.assertEqual(list(csv.reader(file)), [["old_path", "proposed_name"], [str(source), "20241231_Report.txt"]])
+                with contextlib.redirect_stdout(StringIO()):
+                    self.assertEqual(rename_dates.main(["--apply", str(proposals)]), 0)
             finally:
                 os.chdir(before)
             target = nested / "20241231_Report.txt"
@@ -65,10 +67,77 @@ class RenameDatesTests(unittest.TestCase):
             target = root / "20241231_Report.txt"
             source.write_text("source", encoding="utf-8")
             target.write_text("target", encoding="utf-8")
-            with contextlib.redirect_stdout(StringIO()), contextlib.redirect_stderr(StringIO()):
-                self.assertEqual(rename_dates.main([str(root), "--apply"]), 1)
+            before = Path.cwd()
+            try:
+                os.chdir(root)
+                with contextlib.redirect_stdout(StringIO()), contextlib.redirect_stderr(StringIO()):
+                    self.assertEqual(rename_dates.main([str(root)]), 0)
+                proposals = next(root.glob("rename-proposals-*.csv"))
+                with contextlib.redirect_stdout(StringIO()), contextlib.redirect_stderr(StringIO()):
+                    self.assertEqual(rename_dates.main(["--apply", str(proposals)]), 1)
+            finally:
+                os.chdir(before)
             self.assertEqual(source.read_text(encoding="utf-8"), "source")
             self.assertEqual(target.read_text(encoding="utf-8"), "target")
+
+    def test_deleted_and_edited_proposals_control_apply(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            sources = [root / f"{letter}_31122024.txt" for letter in "ABC"]
+            for source in sources:
+                source.touch()
+            before = Path.cwd()
+            try:
+                os.chdir(root)
+                with contextlib.redirect_stdout(StringIO()):
+                    self.assertEqual(rename_dates.main([str(root)]), 0)
+                proposals = next(root.glob("rename-proposals-*.csv"))
+                with proposals.open(newline="", encoding="utf-8") as file:
+                    rows = list(csv.DictReader(file))
+                rows[0]["proposed_name"] = "My chosen name.txt"
+                rows[1]["proposed_name"] = ""
+                with proposals.open("w", newline="", encoding="utf-8") as file:
+                    writer = csv.DictWriter(file, fieldnames=["old_path", "proposed_name"])
+                    writer.writeheader()
+                    writer.writerows(rows[:2])  # Removed row C must stay untouched too.
+                with contextlib.redirect_stdout(StringIO()):
+                    self.assertEqual(rename_dates.main(["--apply", str(proposals)]), 0)
+            finally:
+                os.chdir(before)
+            self.assertTrue((root / "My chosen name.txt").exists())
+            self.assertFalse(sources[0].exists())
+            self.assertTrue(sources[1].exists())
+            self.assertTrue(sources[2].exists())
+
+    def test_invalid_manual_name_aborts_before_rename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "A_31122024.txt"
+            source.touch()
+            proposals = root / "proposals.csv"
+            with proposals.open("w", newline="", encoding="utf-8") as file:
+                writer = csv.writer(file)
+                writer.writerow(("old_path", "proposed_name"))
+                writer.writerow((str(source), "../outside.txt"))
+            with contextlib.redirect_stderr(StringIO()):
+                self.assertEqual(rename_dates.main(["--apply", str(proposals)]), 1)
+            self.assertTrue(source.exists())
+
+    def test_manual_name_collision_aborts_all_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            sources = [root / "A_31122024.txt", root / "B_31122024.txt"]
+            for source in sources:
+                source.touch()
+            proposals = root / "proposals.csv"
+            with proposals.open("w", newline="", encoding="utf-8") as file:
+                writer = csv.writer(file)
+                writer.writerow(("old_path", "proposed_name"))
+                writer.writerows((str(source), "same.txt") for source in sources)
+            with contextlib.redirect_stdout(StringIO()), contextlib.redirect_stderr(StringIO()):
+                self.assertEqual(rename_dates.main(["--apply", str(proposals)]), 1)
+            self.assertTrue(all(source.exists() for source in sources))
+            self.assertFalse((root / "same.txt").exists())
 
     def test_case_only_destination_collision(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -96,8 +165,11 @@ class RenameDatesTests(unittest.TestCase):
             before = Path.cwd()
             try:
                 os.chdir(root)
+                with contextlib.redirect_stdout(StringIO()):
+                    self.assertEqual(rename_dates.main([str(root)]), 0)
+                proposals = next(root.glob("rename-proposals-*.csv"))
                 with patch.object(Path, "rename", fail_second), contextlib.redirect_stdout(StringIO()), contextlib.redirect_stderr(StringIO()):
-                    self.assertEqual(rename_dates.main([str(root), "--apply"]), 1)
+                    self.assertEqual(rename_dates.main(["--apply", str(proposals)]), 1)
             finally:
                 os.chdir(before)
             self.assertTrue((root / "20240101_A.txt").exists())

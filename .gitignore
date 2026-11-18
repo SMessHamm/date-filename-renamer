@@ -7,3 +7,4 @@ node_modules/
 *_store/
 *_crypto/
 rename-log-*.csv
+rename-proposals-*.csv

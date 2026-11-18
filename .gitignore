@@ -1,0 +1,9 @@
+*.env
+*_state.json
+__pycache__/
+*.pyc
+.DS_Store
+node_modules/
+*_store/
+*_crypto/
+rename-log-*.csv
